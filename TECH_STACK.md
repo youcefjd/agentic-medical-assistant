@@ -2,7 +2,7 @@
 
 ## Vue d'Ensemble
 
-Mini-Jarvis est une application **agentic** (agentive) de gestion de dossiers médicaux qui utilise l'IA pour automatiser la transcription, la résuméisation et l'analyse des conversations médecin-patient. L'application fonctionne entièrement en local, garantissant la confidentialité des données médicales.
+Agentic Medical Assistant est une application **agentic** (agentive) de gestion de dossiers médicaux qui utilise l'IA pour automatiser la transcription, la résuméisation et l'analyse des conversations médecin-patient. L'application fonctionne entièrement en local, garantissant la confidentialité des données médicales.
 
 ---
 
