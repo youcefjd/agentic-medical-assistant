@@ -48,6 +48,60 @@ page = st.sidebar.selectbox(
     ["Tableau de bord", "Nouveau Patient", "Enregistrer Consultation", "Voir Patient", "Télécharger Tests", "Analyse de Modèles", "Recherche Sémantique"]
 )
 
+# Server shutdown button
+st.sidebar.divider()
+st.sidebar.markdown("### ⚙️ Gestion du Serveur")
+
+# Warning message
+st.sidebar.info("💡 **Astuce:** Utilisez ce bouton pour arrêter le serveur et libérer les ressources (RAM, GPU, etc.)")
+
+# Initialize shutdown confirmation state
+if 'shutdown_confirmed' not in st.session_state:
+    st.session_state['shutdown_confirmed'] = False
+
+# Show confirmation message if first click
+if st.session_state['shutdown_confirmed']:
+    st.sidebar.warning("⚠️ **Confirmation requise:** Cliquez à nouveau sur le bouton pour arrêter le serveur")
+
+# Shutdown button with confirmation
+shutdown_button = st.sidebar.button(
+    "🛑 Arrêter le Serveur", 
+    type="primary", 
+    use_container_width=True,
+    help="Arrête le serveur Streamlit et libère toutes les ressources (RAM, GPU, modèles chargés)"
+)
+
+if shutdown_button:
+    if not st.session_state['shutdown_confirmed']:
+        # First click: request confirmation
+        st.session_state['shutdown_confirmed'] = True
+        st.rerun()
+    else:
+        # Second click: confirmed, shutdown
+        st.session_state['shutdown_confirmed'] = False
+        
+        # Show shutdown message
+        st.sidebar.success("✅ Arrêt du serveur en cours...")
+        
+        # Clear any cached resources
+        try:
+            st.cache_resource.clear()
+        except:
+            pass
+        
+        # Force stop the Streamlit server
+        # This will terminate the Python process and free up all resources
+        import os
+        import signal
+        
+        # Try graceful shutdown first
+        try:
+            # Send SIGTERM to current process
+            os.kill(os.getpid(), signal.SIGTERM)
+        except:
+            # If that doesn't work, force exit
+            os._exit(0)
+
 # Dashboard
 if page == "Tableau de bord":
     st.title("Tableau de Bord des Patients")
