@@ -12,7 +12,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from database import db_manager, Patient, Visit
-from services import Transcriber, MedicalSummarizer, PatternAnalyzer, PDFGenerator, VectorStore
+from services import Transcriber, MedicalSummarizer, PatternAnalyzer, PDFGenerator, VectorStore, MedicalChat
 from integrations import DICOMParser, LabResultsParser
 
 # Page configuration
@@ -35,7 +35,8 @@ def get_services():
         "pdf_generator": PDFGenerator(),
         "dicom_parser": DICOMParser(),
         "lab_parser": LabResultsParser(),
-        "vector_store": vector_store
+        "vector_store": vector_store,
+        "medical_chat": MedicalChat(vector_store=vector_store)
     }
 
 services = get_services()
@@ -517,6 +518,191 @@ elif page == "Voir Patient":
                             st.divider()
             else:
                 st.info("Aucun résultat de test disponible pour ce patient.")
+            
+            # Interactive Chat with Medical Records
+            st.divider()
+            st.subheader("💬 Chat Interactif avec le Dossier Médical")
+            st.caption("Posez des questions sur le dossier complet du patient (consultations, médicaments, tests, etc.)")
+            
+            # Initialize chat session for this patient
+            chat_key = f"chat_{selected_patient_id}"
+            if chat_key not in st.session_state:
+                st.session_state[chat_key] = []
+            
+            # Display chat history
+            chat_container = st.container()
+            with chat_container:
+                for message in st.session_state[chat_key]:
+                    if message["role"] == "user":
+                        with st.chat_message("user"):
+                            st.write(message["content"])
+                    else:
+                        with st.chat_message("assistant"):
+                            st.write(message["content"])
+                            if message.get("context_used"):
+                                with st.expander("📊 Contexte utilisé"):
+                                    ctx = message["context_used"]
+                                    st.write(f"- Consultations: {ctx.get('visits_count', 0)}")
+                                    st.write(f"- Médicaments: {ctx.get('medications_count', 0)}")
+                                    st.write(f"- Tests: {ctx.get('tests_count', 0)}")
+                                    if ctx.get('vector_search_used'):
+                                        st.write("- Recherche sémantique: ✅")
+            
+            # Chat input
+            user_question = st.chat_input("Posez une question sur le dossier du patient...")
+            
+            if user_question:
+                # Add user message to history
+                st.session_state[chat_key].append({
+                    "role": "user",
+                    "content": user_question
+                })
+                
+                # Display user message
+                with st.chat_message("user"):
+                    st.write(user_question)
+                
+                # Get response from medical chat
+                with st.chat_message("assistant"):
+                    with st.spinner("Analyse du dossier..."):
+                        try:
+                            chat_response = services["medical_chat"].chat(
+                                patient_id=selected_patient_id,
+                                user_message=user_question,
+                                use_vector_search=True
+                            )
+                            
+                            if chat_response.get("error"):
+                                error_msg = chat_response.get("response", "Erreur inconnue")
+                                st.error(error_msg)
+                                st.session_state[chat_key].append({
+                                    "role": "assistant",
+                                    "content": f"❌ Erreur: {error_msg}",
+                                    "error": True
+                                })
+                            else:
+                                response_text = chat_response.get("response", "")
+                                if not response_text or len(response_text.strip()) < 10:
+                                    response_text = "⚠️ Désolé, je n'ai pas pu générer de réponse. Veuillez reformuler votre question ou vérifier que le patient a des données dans son dossier."
+                                    st.warning(response_text)
+                                else:
+                                    st.write(response_text)
+                                
+                                # Show context used
+                                if chat_response.get("context_used"):
+                                    with st.expander("📊 Contexte utilisé"):
+                                        ctx = chat_response["context_used"]
+                                        st.write(f"- Consultations analysées: {ctx.get('visits_count', 0)}")
+                                        st.write(f"- Médicaments analysés: {ctx.get('medications_count', 0)}")
+                                        st.write(f"- Tests analysés: {ctx.get('tests_count', 0)}")
+                                        if ctx.get('vector_search_used'):
+                                            st.write("- Recherche sémantique: ✅ Activée")
+                                
+                                # Add assistant response to history
+                                st.session_state[chat_key].append({
+                                    "role": "assistant",
+                                    "content": response_text,
+                                    "context_used": chat_response.get("context_used")
+                                })
+                        except Exception as e:
+                            error_msg = f"Erreur lors du traitement: {str(e)}"
+                            st.error(error_msg)
+                            st.session_state[chat_key].append({
+                                "role": "assistant",
+                                "content": f"❌ {error_msg}",
+                                "error": True
+                            })
+                
+                # Rerun to update chat display
+                st.rerun()
+            
+            # Clear chat button
+            if st.session_state[chat_key]:
+                if st.button("🗑️ Effacer l'historique de conversation", key=f"clear_chat_{selected_patient_id}"):
+                    st.session_state[chat_key] = []
+                    services["medical_chat"].clear_history(selected_patient_id)
+                    st.rerun()
+            
+            # Example questions
+            st.caption("💡 Exemples de questions:")
+            example_questions = [
+                "Quels sont les médicaments actifs?",
+                "Résumez l'évolution de la pathologie",
+                "Quels sont les tests récents?",
+                "Y a-t-il eu des changements de médicaments?",
+                "Quel était le dernier diagnostic?"
+            ]
+            cols = st.columns(len(example_questions))
+            for i, question in enumerate(example_questions):
+                with cols[i]:
+                    if st.button(question, key=f"example_{selected_patient_id}_{i}", use_container_width=True):
+                        # Use JavaScript to set chat input (workaround)
+                        st.session_state[f"auto_question_{selected_patient_id}"] = question
+                        st.rerun()
+            
+            # Auto-ask question if set
+            if f"auto_question_{selected_patient_id}" in st.session_state:
+                auto_q = st.session_state.pop(f"auto_question_{selected_patient_id}")
+                # Simulate chat input
+                st.session_state[chat_key].append({"role": "user", "content": auto_q})
+                
+                # Display user message immediately
+                with st.chat_message("user"):
+                    st.write(auto_q)
+                
+                # Get response from medical chat
+                with st.chat_message("assistant"):
+                    with st.spinner("Analyse du dossier..."):
+                        try:
+                            chat_response = services["medical_chat"].chat(
+                                patient_id=selected_patient_id,
+                                user_message=auto_q,
+                                use_vector_search=True
+                            )
+                            
+                            if chat_response.get("error"):
+                                error_msg = chat_response.get("response", "Erreur inconnue")
+                                st.error(error_msg)
+                                st.session_state[chat_key].append({
+                                    "role": "assistant",
+                                    "content": f"❌ Erreur: {error_msg}",
+                                    "error": True
+                                })
+                            else:
+                                response_text = chat_response.get("response", "")
+                                if not response_text or len(response_text.strip()) < 10:
+                                    response_text = "⚠️ Désolé, je n'ai pas pu générer de réponse. Veuillez reformuler votre question."
+                                    st.warning(response_text)
+                                else:
+                                    st.write(response_text)
+                                
+                                # Show context used
+                                if chat_response.get("context_used"):
+                                    with st.expander("📊 Contexte utilisé"):
+                                        ctx = chat_response["context_used"]
+                                        st.write(f"- Consultations analysées: {ctx.get('visits_count', 0)}")
+                                        st.write(f"- Médicaments analysés: {ctx.get('medications_count', 0)}")
+                                        st.write(f"- Tests analysés: {ctx.get('tests_count', 0)}")
+                                        if ctx.get('vector_search_used'):
+                                            st.write("- Recherche sémantique: ✅ Activée")
+                                
+                                # Add assistant response to history
+                                st.session_state[chat_key].append({
+                                    "role": "assistant",
+                                    "content": response_text,
+                                    "context_used": chat_response.get("context_used")
+                                })
+                        except Exception as e:
+                            error_msg = f"Erreur lors du traitement: {str(e)}"
+                            st.error(error_msg)
+                            st.session_state[chat_key].append({
+                                "role": "assistant",
+                                "content": f"❌ {error_msg}",
+                                "error": True
+                            })
+                
+                # Rerun to update chat display
+                st.rerun()
 
 # Upload Tests
 elif page == "Télécharger Tests":

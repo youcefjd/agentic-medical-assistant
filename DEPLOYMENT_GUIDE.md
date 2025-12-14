@@ -375,3 +375,4 @@ elif authentication_status == None:
 
 **Priorité absolue**: Confidentialité des données médicales → Installation locale recommandée sauf si infrastructure réseau sécurisée en place.
 
+
